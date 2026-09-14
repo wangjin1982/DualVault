@@ -264,7 +264,7 @@ struct FileTableView: NSViewRepresentable {
             view.accentColor = NSColor(theme.accent)
             view.hoverColor = NSColor(theme.hover)
             // U1.1 对比度修复：选中底色（蓝系）较深 → 选中行文字用白色；普通行按主题
-            view.selectedTextColor = .white
+            view.selectedTextColor = NSColor(theme.selText)
             view.normalTextColor = NSColor(theme.foreground)
             DispatchQueue.main.async { view.syncTextColor() }
             return view
@@ -318,7 +318,7 @@ struct FileTableView: NSViewRepresentable {
                 text.stringValue = pane.branchMode
                     ? BranchFlattener.displayName(for: item, root: pane.url)
                     : item.name
-                text.font = item.isDirectory ? .boldSystemFont(ofSize: 12) : .systemFont(ofSize: 12)
+                text.font = item.isDirectory ? .systemFont(ofSize: 12, weight: .medium) : .systemFont(ofSize: 12)
                 // F3-4：缩略图开关 + 图片扩展名
                 let image: NSImage = (pane.showThumbnails && !item.isDirectory)
                     ? IconStore.thumbnail(for: item.url.path)

@@ -34,6 +34,8 @@ struct ThemeValues {
     let iconDoc: Color
     let iconZip: Color
     let statusBackground: Color
+    /// 选中行文字：选中底色浅（浅色主题）→ 主题深字；底色深 → 白字（U1.2）
+    let selText: Color
 
     static func from(_ t: AppTheme, isDark: Bool = true) -> ThemeValues {
         let c = resolvedColors(t, isDark: isDark)
@@ -66,13 +68,21 @@ struct ThemeValues {
             diskTrack: color(c.diskTrack, fallback: "#33334A"),
             iconDoc: color(c.iconDoc, fallback: "#8A9CF5"),
             iconZip: color(c.iconZip, fallback: "#E5C07B"),
-            statusBackground: color(c.tabBarBackground, fallback: "#1E1F25"))
+            statusBackground: color(c.tabBarBackground, fallback: "#1E1F25"),
+            selText: Self.selTextColor(c))
     }
 
     /// 跟随系统模式下取配对色板：Dark 主题带 lightColors；其余主题按当前侧取 colors。
     private static func resolvedColors(_ t: AppTheme, isDark: Bool) -> ThemeColors {
         if isDark { return t.colors }
         return t.lightColors ?? t.colors
+    }
+
+    /// 选中文字色：按选中底色亮度自适应（>0.55 视为浅底 → 用主题前景色，否则白）。
+    private static func selTextColor(_ c: ThemeColors) -> Color {
+        guard let rgba = HexColor.rgba(c.selFolder) else { return .white }
+        let lum = 0.2126 * rgba.r + 0.7152 * rgba.g + 0.0722 * rgba.b
+        return lum > 0.55 ? color(c.foreground, fallback: "#3A3F4A") : .white
     }
 
     static let fallback = ThemeValues.from(.builtIns[1]) // Dark

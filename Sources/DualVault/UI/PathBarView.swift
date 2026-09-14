@@ -8,13 +8,6 @@ struct PathBarView: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            // U1.1 侧栏开关
-            Button(action: { sidebarVisible.toggle() }) {
-                Image(systemName: "sidebar.left")
-            }
-            .buttonStyle(.borderless)
-            .help("显示/隐藏侧栏")
-
             Button(action: pane.goUp) {
                 Image(systemName: "arrow.up.to.line")
             }

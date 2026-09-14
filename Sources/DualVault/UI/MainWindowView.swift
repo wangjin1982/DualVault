@@ -9,24 +9,24 @@ struct MainWindowView: View {
     @State private var quickLookObserver: (any NSObjectProtocol)?
 
     var body: some View {
-        HStack(spacing: 0) {
-            // U1.1 侧栏：设备/最近/收藏/标签/可展开文件夹树
-            if sidebarVisible {
-                SidebarView(model: model, side: .left, services: services)
-                    .frame(width: 170)
-                Divider()
-            }
-            DualSplitView(
-                dividerPosition: $dividerPosition,
-                centerWidth: 56) {
-                PaneColumnView(group: model.leftGroup, side: .left, model: model, sidebarVisible: $sidebarVisible)
-            } center: {
-                CenterActionBar(model: model)
-            } right: {
-                PaneColumnView(group: model.rightGroup, side: .right, model: model, sidebarVisible: $sidebarVisible)
+        VStack(spacing: 0) {
+            // U1.2 顶部工具栏：操作集中于此（ForkLift 风格），标题栏透明融入
+            ToolbarView(model: model, sidebarVisible: $sidebarVisible)
+            HStack(spacing: 0) {
+                // U1.1 侧栏：设备/最近/收藏/标签/可展开文件夹树
+                if sidebarVisible {
+                    SidebarView(model: model, side: .left, services: services)
+                        .frame(width: 170)
+                    Rectangle().fill(theme.pathBarStroke).frame(width: 1)
+                }
+                DualSplitView(dividerPosition: $dividerPosition) {
+                    PaneColumnView(group: model.leftGroup, side: .left, model: model, sidebarVisible: $sidebarVisible)
+                } right: {
+                    PaneColumnView(group: model.rightGroup, side: .right, model: model, sidebarVisible: $sidebarVisible)
+                }
             }
         }
-        .frame(minWidth: 760, minHeight: 470)
+        .frame(minWidth: 820, minHeight: 470)
         .background(theme.background)
         .sheet(item: $model.activeSheet) { sheet in
             switch sheet {
@@ -110,15 +110,18 @@ struct MainWindowView: View {
         }
         .onAppear {
             AppServices.shared.model = model
-            // U1：标题栏融入（透明 + 全尺寸内容）
-            DispatchQueue.main.async {
-                NSApp.windows.first?.titlebarAppearsTransparent = true
-            }
+            // U1.2：标题栏融合——系统标题栏跟随主题外观（消灭与内容脱节的黑带）
+            applyWindowChrome()
+            chromeObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didBecomeKeyNotification, object: nil, queue: .main) { [weak themeStore] _ in
+                    _ = themeStore   // 保持引用
+                }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { applyWindowChromeAgain() }
             AppServices.shared.themeStore = themeStore
             let dividerBinding = self.$dividerPosition
             model.equalizeHandler = {
                 guard let width = NSApp.keyWindow?.contentView?.bounds.width else { return }
-                dividerBinding.wrappedValue = max(320, (width - 56) / 2)
+                dividerBinding.wrappedValue = max(280, (width - (sidebarVisible ? 171 : 0)) / 2)
             }
             restoreLayout()
             setupKeyboardMonitor()
@@ -139,6 +142,26 @@ struct MainWindowView: View {
 
     @StateObject private var themeStore = ThemeStore()
     @State private var dividerPosition: CGFloat = 500
+
+    // MARK: - 窗口外观（U1.2：标题栏跟随主题）
+
+    @State private var chromeObserver: (any NSObjectProtocol)?
+
+    private func applyWindowChrome() {
+        let dark = themeStore.isSystemDark && themeStore.mode == .system
+            || themeStore.mode == .dark
+        NSApp.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        for w in NSApp.windows {
+            guard w.contentView != nil else { continue }
+            w.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+            w.titlebarAppearsTransparent = true
+            w.titleVisibility = .hidden
+            w.backgroundColor = NSColor(themeStore.values.background)
+        }
+    }
+
+    /// SwiftUI 建窗晚于 onAppear，延迟再应用一次（幂等）。
+    private func applyWindowChromeAgain() { applyWindowChrome() }
 
     // MARK: - 布局记忆（D5）
 

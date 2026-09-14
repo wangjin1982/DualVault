@@ -187,7 +187,7 @@ extension AppTheme {
     private static let lightPalette = ThemeColors(
         background: "#F5F6F8", paneBackground: "#FFFFFF",
         alternateRow: "#F2F3F5", selection: "#C9D2DE",
-        foreground: "#1F2328", secondaryText: "#6B7180",
+        foreground: "#3A3F4A", secondaryText: "#6B7180",
         centerBarBackground: "#E9EAEE", destructive: "#D70015",
         titleBackground: "#ECEEF1", headerBackground: "#F0F1F4",
         rowEven: "#F2F3F5", rowOdd: "#FFFFFF",
