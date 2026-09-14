@@ -4,16 +4,27 @@ import SwiftUI
 struct MainWindowView: View {
     @Environment(\.theme) private var theme
     @StateObject private var model = BrowserModel()
+    @ObservedObject private var services = AppServices.shared
+    @State private var sidebarVisible = true
+    @State private var quickLookObserver: (any NSObjectProtocol)?
 
     var body: some View {
-        DualSplitView(
-            dividerPosition: $dividerPosition,
-            centerWidth: 56) {
-            PaneColumnView(group: model.leftGroup, side: .left, model: model)
-        } center: {
-            CenterActionBar(model: model)
-        } right: {
-            PaneColumnView(group: model.rightGroup, side: .right, model: model)
+        HStack(spacing: 0) {
+            // U1.1 侧栏：设备/最近/收藏/标签/可展开文件夹树
+            if sidebarVisible {
+                SidebarView(model: model, side: .left, services: services)
+                    .frame(width: 170)
+                Divider()
+            }
+            DualSplitView(
+                dividerPosition: $dividerPosition,
+                centerWidth: 56) {
+                PaneColumnView(group: model.leftGroup, side: .left, model: model, sidebarVisible: $sidebarVisible)
+            } center: {
+                CenterActionBar(model: model)
+            } right: {
+                PaneColumnView(group: model.rightGroup, side: .right, model: model, sidebarVisible: $sidebarVisible)
+            }
         }
         .frame(minWidth: 760, minHeight: 470)
         .background(theme.background)
@@ -111,9 +122,15 @@ struct MainWindowView: View {
             }
             restoreLayout()
             setupKeyboardMonitor()
+            // U1.1 右键"快速查看"桥接
+            quickLookObserver = NotificationCenter.default.addObserver(
+                forName: Notification.Name("DualVault.QuickLook"), object: nil, queue: .main) { [weak model] _ in
+                model?.quickLookSelection()
+            }
         }
         .onDisappear {
             saveLayout()
+            if let obs = quickLookObserver { NotificationCenter.default.removeObserver(obs) }
             if AppServices.shared.model === model { AppServices.shared.model = nil }
             removeKeyboardMonitor()
         }
@@ -161,6 +178,7 @@ struct PaneColumnView: View {
     @ObservedObject var group: PaneGroupModel
     let side: PaneSide
     @ObservedObject var model: BrowserModel
+    @Binding var sidebarVisible: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -173,7 +191,8 @@ struct PaneColumnView: View {
                 side: side,
                 focusedSide: Binding(
                     get: { model.focusedSide },
-                    set: { model.focusedSide = $0 }))
+                    set: { model.focusedSide = $0 }),
+                sidebarVisible: $sidebarVisible)
         }
     }
 }

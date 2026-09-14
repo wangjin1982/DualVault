@@ -125,6 +125,14 @@ final class BrowserModel: ObservableObject {
 
     func newTab() { focusedGroup.newTab() }
 
+    /// U1.1 侧栏：在指定栏以给定目录新开标签并切换。
+    func newTab(in side: PaneSide, at url: URL) {
+        let group = side == .left ? leftGroup : rightGroup
+        group.newTab()
+        group.selectedPane.navigate(to: url)
+        focusedSide = side
+    }
+
     func closeTab(in group: PaneGroupModel, id: UUID) {
         if !group.closeTab(id: id) {
             alertMessage = "最后一个标签不可关闭"

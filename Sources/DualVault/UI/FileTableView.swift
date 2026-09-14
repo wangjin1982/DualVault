@@ -15,13 +15,55 @@ final class KeyTableView: NSTableView {
     }
 }
 
+/// 右键菜单容器：弹出时按点击行重建菜单内容。
+final class ContextMenuProvider: NSMenu {
+    weak var coordinator: FileTableView.Coordinator?
+    init(coordinator: FileTableView.Coordinator) {
+        self.coordinator = coordinator
+        super.init(title: "")
+    }
+    required init(coder: NSCoder) { fatalError("unsupported") }
+
+    override func update() {
+        removeAllItems()
+        let row = coordinator?.table?.clickedRow ?? -1
+        let rebuilt = coordinator?.menu(for: row) ?? NSMenu()
+        for case let item as NSMenuItem in rebuilt.items {
+            item.target = coordinator
+            addItem(item)
+        }
+        if let coordinator = coordinator { coordinator.menuRow = coordinator.table?.clickedRow ?? -1 }
+    }
+}
+
 /// U1 自绘行视图：交替行底色 / 选中两档（文件夹较深）/ 左缘强调条 / hover。
+/// U1.1：选中态自动反色文字——选中底色较深时单元格文字切换为高对比色。
 final class DualRowView: NSTableRowView {
     var baseColor: NSColor = .clear
     var selectedColor: NSColor = .clear
     var accentColor: NSColor = .clear
     var hoverColor: NSColor = .clear
+    /// 选中态文字色（由 Coordinator 按主题亮度注入：浅色主题选中行用白字，深色用亮字）
+    var selectedTextColor: NSColor = .white
+    var normalTextColor: NSColor = .labelColor
     var isHovered = false { didSet { if isHovered != oldValue { needsDisplay = true } } }
+
+    override var isSelected: Bool {
+        didSet { syncTextColor() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncTextColor()
+    }
+
+    /// 遍历本行单元格文字，按选中态切换颜色。
+    func syncTextColor() {
+        let target = isSelected ? selectedTextColor : normalTextColor
+        for case let field as NSTextField in subviews {
+            field.textColor = target
+        }
+    }
 
     override func drawBackground(in dirtyRect: NSRect) {
         let color: NSColor
@@ -70,6 +112,11 @@ struct FileTableView: NSViewRepresentable {
         table.doubleAction = #selector(Coordinator.doubleClickRow)
         table.target = context.coordinator
         context.coordinator.table = table
+        context.coordinator.modelProxy = AppServices.shared.model
+        // U1.1 右键菜单：动态生成（点击行 = 行操作菜单；空白 = 新建文件夹）
+        let menuProvider = ContextMenuProvider(coordinator: context.coordinator)
+        context.coordinator.menuProvider = menuProvider
+        table.menu = menuProvider
         applyTheme(to: table, coordinator: coordinator)
 
         // hover 追踪：可见矩形内自动跟随滚动
@@ -108,6 +155,7 @@ struct FileTableView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         let coordinator = context.coordinator
         coordinator.pane = pane
+        coordinator.modelProxy = AppServices.shared.model
         guard let table = scroll.documentView as? KeyTableView else { return }
 
         // 主题变化 → 刷新表与全部行的颜色
@@ -149,6 +197,7 @@ struct FileTableView: NSViewRepresentable {
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         var pane: PaneState
         weak var table: KeyTableView?
+        weak var menuProvider: ContextMenuProvider?
         var lastItemCount = -1
         var needsReload = true
         var isSyncingSelection = false
@@ -205,6 +254,10 @@ struct FileTableView: NSViewRepresentable {
             view.selectedColor = NSColor(item.isDirectory ? theme.selFolder : theme.selFile)
             view.accentColor = NSColor(theme.accent)
             view.hoverColor = NSColor(theme.hover)
+            // U1.1 对比度修复：选中底色（蓝系）较深 → 选中行文字用白色；普通行按主题
+            view.selectedTextColor = .white
+            view.normalTextColor = NSColor(theme.foreground)
+            DispatchQueue.main.async { view.syncTextColor() }
             return view
         }
 
@@ -313,6 +366,90 @@ struct FileTableView: NSViewRepresentable {
             pane.applySort(key: key, ascending: descriptor.ascending)
             needsReload = true
         }
+
+        // MARK: 右键菜单（U1.1 需求 3）
+
+        /// 构建右键菜单。点击空白处时 menuSourceRow = -1，仅显示新建文件夹。
+        func menu(for row: Int) -> NSMenu {
+            let m = NSMenu()
+            let inRange = row >= 0 && row < pane.displayedItems.count
+            let item = inRange ? pane.displayedItems[row] : nil
+
+            func add(_ title: String, _ sel: Selector, _ enabled: Bool = true) {
+                let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
+                mi.isEnabled = enabled
+                mi.target = self
+                m.addItem(mi)
+            }
+
+            if let item = item {
+                if item.isDirectory {
+                    add("打开", #selector(menuOpenFolder(_:)))
+                } else {
+                    add("打开", #selector(menuOpenFile(_:)))
+                }
+                add("快速查看", #selector(menuQuickLook(_:)))
+                m.addItem(.separator())
+                add("复制到对侧栏", #selector(menuCopy(_:)))
+                add("移动到对侧栏", #selector(menuMove(_:)))
+                m.addItem(.separator())
+            }
+            add("新建文件夹", #selector(menuNewFolder(_:)))
+            if let item = item {
+                add("重命名…", #selector(menuRename(_:)))
+                if !item.isDirectory {
+                    m.addItem(.separator())
+                    add("压缩为 zip", #selector(menuCompress(_:)))
+                    add("校验和…", #selector(menuChecksum(_:)))
+                }
+                m.addItem(.separator())
+                add("拷贝路径", #selector(menuCopyPath(_:)))
+                add("移到废纸篓", #selector(menuTrash(_:)))
+            }
+            return m
+        }
+
+        private func focusedRowURL(_ sender: NSMenuItem) -> URL? {
+            guard menuRow >= 0, menuRow < pane.displayedItems.count else { return nil }
+            return pane.displayedItems[menuRow].url
+        }
+
+        var menuRow = -1
+
+        @objc func menuOpenFolder(_ s: NSMenuItem) { if let u = focusedRowURL(s) { pane.navigate(to: u) } }
+        @objc func menuOpenFile(_ s: NSMenuItem) { if let u = focusedRowURL(s) { NSWorkspace.shared.open(u) } }
+        @objc func menuQuickLook(_ s: NSMenuItem) {
+            guard let u = focusedRowURL(s) else { return }
+            pane.selection = [u]; pane.cursorItem = u
+            NotificationCenter.default.post(name: .init("DualVault.QuickLook"), object: nil)
+        }
+        @objc func menuCopy(_ s: NSMenuItem) { modelProxy?.requestTransfer(kind: .copy) }
+        @objc func menuMove(_ s: NSMenuItem) { modelProxy?.requestTransfer(kind: .move) }
+        @objc func menuNewFolder(_ s: NSMenuItem) { modelProxy?.requestNewFolder() }
+        @objc func menuRename(_ s: NSMenuItem) {
+            guard let u = focusedRowURL(s) else { return }
+            pane.selection = [u]
+            modelProxy?.requestRename()
+        }
+        @objc func menuCompress(_ s: NSMenuItem) {
+            guard let u = focusedRowURL(s) else { return }
+            pane.selection = [u]
+            modelProxy?.requestCompress()
+        }
+        @objc func menuChecksum(_ s: NSMenuItem) {
+            guard let u = focusedRowURL(s) else { return }
+            pane.selection = [u]
+            modelProxy?.requestChecksum()
+        }
+        @objc func menuCopyPath(_ s: NSMenuItem) {
+            guard let u = focusedRowURL(s) else { return }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(u.path, forType: .string)
+        }
+        @objc func menuTrash(_ s: NSMenuItem) { modelProxy?.deleteSelection() }
+
+        /// 弱引用 BrowserModel（避免循环持有）；由 makeNSView 注入。
+        weak var modelProxy: BrowserModel?
 
         // 双击 = 打开：文件夹进入目录；zip 进入只读浏览；其余文件用系统默认程序打开（U1 交互）
         @objc func doubleClickRow() {

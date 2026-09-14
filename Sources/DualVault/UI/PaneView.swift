@@ -6,12 +6,13 @@ struct PaneView: View {
     @ObservedObject var model: BrowserModel
     let side: PaneSide
     @Binding var focusedSide: PaneSide
+    @Binding var sidebarVisible: Bool
 
     private var isFocused: Bool { focusedSide == side }
 
     var body: some View {
         VStack(spacing: 0) {
-            PathBarView(pane: pane)
+            PathBarView(pane: pane, sidebarVisible: $sidebarVisible)
             FileTableView(pane: pane)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             StatusBarView(pane: pane, model: model)
