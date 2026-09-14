@@ -52,6 +52,15 @@ final class DualRowView: NSTableRowView {
         didSet { syncTextColor() }
     }
 
+    override var isEmphasized: Bool {
+        get { false }              // U1.1：禁用系统焦点强调色（避免整行变系统蓝）
+        set { }
+    }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        // 选择底色已在 drawBackground 绘制（主题两档色），禁用系统选区
+    }
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         syncTextColor()
